@@ -8,6 +8,8 @@ The architecture:
                                                                   Decoder MLP <- (training only)
 """
 
+import warnings
+
 import torch
 import torch.nn as nn
 
@@ -61,6 +63,13 @@ class MultiTimescaleAggregator(nn.Module):
 
         if event_time is None:
             # Fallback: mean pool all valid events, repeat for each window
+            warnings.warn(
+                "event_time not found in input data. "
+                "MultiTimescaleAggregator is falling back to simple mean pooling "
+                "(all time windows will be identical). Pass event_time in your "
+                "feature dicts for proper multi-timescale aggregation.",
+                stacklevel=3,
+            )
             mask_f = valid_mask.unsqueeze(-1).float()  # (B, T, 1)
             counts = mask_f.sum(dim=1).clamp(min=1)    # (B, 1)
             mean_emb = (embeddings * mask_f).sum(dim=1) / counts  # (B, H)
@@ -105,6 +114,10 @@ class AutoEncoderSeqEncoder(nn.Module):
 
     Follows the SeqEncoderContainer interface so it can be used as a
     drop-in replacement in ABSModule-based training frameworks.
+
+    The full gradient path is: loss -> decoder -> encoder -> aggregated -> TrxEncoder.
+    This trains TrxEncoder end-to-end to produce features that reconstruct well.
+    The reconstruction target is detached to prevent competing gradients.
 
     Args:
         trx_encoder: TrxEncoder instance for embedding raw event features.
@@ -187,7 +200,33 @@ class AutoEncoderSeqEncoder(nn.Module):
 
     @property
     def category_names(self):
-        return self.trx_encoder.category_names
+        return set(self.trx_encoder.embeddings.keys())
+
+    # --- Public API for GURModule ---
+
+    def reconstruct(self, latent):
+        """Decode latent embeddings back to aggregated feature space.
+
+        Args:
+            latent: (B, latent_dim) tensor from encoder.
+
+        Returns:
+            (B, agg_dim) reconstructed aggregated features.
+        """
+        return self.decoder(latent)
+
+    def get_cached_aggregated(self):
+        """Return and clear the cached aggregated features from last forward().
+
+        The cache is populated during forward() and contains the detached
+        aggregated features used as the reconstruction target.
+
+        Returns:
+            (B, agg_dim) detached tensor, or None if forward() hasn't been called.
+        """
+        val = self._cached_aggregated
+        self._cached_aggregated = None
+        return val
 
     def forward(self, x, names=None, seq_len=None):
         """

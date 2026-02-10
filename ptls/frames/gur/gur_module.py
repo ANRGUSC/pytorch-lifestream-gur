@@ -13,14 +13,15 @@ import torchmetrics
 from functools import partial
 
 from ptls.frames.abs_module import ABSModule
+from ptls.nn.seq_encoder.autoencoder_encoder import AutoEncoderSeqEncoder
 
 
 class ReconstructionMSE(torchmetrics.MeanMetric):
-    """Validation metric: mean reconstruction MSE across batches."""
+    """Validation metric: mean reconstruction MSE across batches, weighted by batch size."""
 
     def update(self, preds, target):
         mse = nn.functional.mse_loss(preds, target)
-        super().update(mse)
+        super().update(mse, weight=preds.shape[0])
 
 
 class GURModule(ABSModule):
@@ -51,6 +52,12 @@ class GURModule(ABSModule):
         optimizer_partial: partial = None,
         lr_scheduler_partial: partial = None,
     ):
+        if not isinstance(seq_encoder, AutoEncoderSeqEncoder):
+            raise TypeError(
+                f"GURModule requires an AutoEncoderSeqEncoder, got {type(seq_encoder).__name__}. "
+                "Use AutoEncoderSeqEncoder from ptls.nn.seq_encoder.autoencoder_encoder."
+            )
+
         if loss is None:
             loss = nn.MSELoss()
 
@@ -84,6 +91,11 @@ class GURModule(ABSModule):
             (reconstruction, target) for loss computation.
         """
         latent = self(x)  # AutoEncoderSeqEncoder.forward -> (B, latent_dim)
-        reconstruction = self._seq_encoder.decoder(latent)  # (B, agg_dim)
-        target = self._seq_encoder._cached_aggregated       # (B, agg_dim), already detached
+        reconstruction = self._seq_encoder.reconstruct(latent)  # (B, agg_dim)
+        target = self._seq_encoder.get_cached_aggregated()      # (B, agg_dim), detached + cleared
+        if target is None:
+            raise RuntimeError(
+                "Aggregated features cache is empty. This should not happen — "
+                "forward() should populate the cache before shared_step reads it."
+            )
         return reconstruction, target

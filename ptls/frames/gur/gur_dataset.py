@@ -21,13 +21,13 @@ class GURDataset(FeatureDict, torch.utils.data.Dataset):
         data: List of feature dicts, each with keys like
             'event_time', 'mcc_code', 'amount', etc.
         min_seq_len: Minimum sequence length to include (default: 1).
+            Sequences shorter than this are filtered out.
     """
 
     def __init__(self, data, min_seq_len=1, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.data = data
-        if min_seq_len > 1:
-            self.data = [d for d in self.data if self.get_seq_len(d) >= min_seq_len]
+        effective_min = max(min_seq_len, 1)
+        self.data = [d for d in data if self.get_seq_len(d) >= effective_min]
 
     def __len__(self):
         return len(self.data)
