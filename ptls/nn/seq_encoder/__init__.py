@@ -6,6 +6,7 @@ from .custom_encoder import Encoder
 
 from .containers import RnnSeqEncoder, TransformerSeqEncoder, LongformerSeqEncoder, CustomSeqEncoder
 from .agg_feature_seq_encoder import AggFeatureSeqEncoder
+from .autoencoder_encoder import AutoEncoderSeqEncoder, MultiTimescaleAggregator
 
 # from ptls.nn.seq_encoder.rnn_seq_encoder_distribution_target import RnnSeqEncoderDistributionTarget
 # from ptls.nn.seq_encoder.statistics_encoder import StatisticsEncoder
